@@ -129,6 +129,7 @@ const ENTRIES = [
     stderr: /REGISTRY_URL is not set/,
   },
   { file: "scripts/replay-check.mjs", code: 64, stderr: /usage:/ },
+  { file: "scripts/decide-source.mjs", code: 64, stderr: /usage:/ },
   { file: "scripts/review-rounds.mjs", args: ["--help"], code: 0, stdout: /usage:/ },
   { file: "roster.mjs", code: 64, stderr: /usage:/ },
   { file: "payout.mjs", code: 64, stderr: /usage:/ },
