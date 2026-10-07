@@ -352,7 +352,7 @@ describe("opening auto jobs", () => {
     regTimeline[`${REG}#610`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z")];
     regTimeline[`${REG}#611`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(9, "2026-10-05T00:02:00Z")];
     regTimeline[`${REG}#612`] = [];
-    pulls[9] = pull(9, { state: "open" });
+    pulls[9] = pull(9, { state: "open", body: `Closes ${REG}#611` });
     serveBoard();
     await settle();
     assert.equal(created.length, 0);
@@ -362,19 +362,39 @@ describe("opening auto jobs", () => {
     assert.match(why[`${REG}#612`], /the label's application is not indexed yet/);
   });
 
-  test("a merged referencing pull request skips the issue, and one closed unmerged does not", async () => {
+  test("a merged referencing pull request that closes the issue skips it, and one closed unmerged does not", async () => {
     reset();
     roles.jlwaugh = "admin";
     regIssues[REG] = [registryIssue(613), registryIssue(614)];
     regTimeline[`${REG}#613`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(10, "2026-10-05T00:02:00Z")];
     regTimeline[`${REG}#614`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(11, "2026-10-05T00:02:00Z")];
-    pulls[10] = pull(10, { state: "closed", merged: true });
-    pulls[11] = pull(11, { state: "closed", merged: false });
+    pulls[10] = pull(10, { state: "closed", merged: true, body: `Closes ${REG}#613` });
+    pulls[11] = pull(11, { state: "closed", merged: false, body: `Closes ${REG}#614` });
     serveBoard();
     await settle();
     assert.equal(created.length, 2, "only the issue whose referencing pull request closed unmerged opens");
     const why = Object.fromEntries(autoJobsHealth().skipped.map(s => [s.issue, s.why]));
     assert.match(why[`${REG}#613`], /a merged pull request \(.*pull\/10\) already settles it/);
+  });
+
+  // #175: GitHub records a cross-reference for any mention of the issue — a
+  // PR's body, a commit message, or a comment on the PR — whether or not it
+  // closes the issue. Only a closing reference (closesSource, lib/payouts.mjs)
+  // may hold the issue back; a PR that merely names it, open or merged, holds
+  // nothing.
+  test("a referencing pull request that does not close the issue holds nothing, open or merged", async () => {
+    reset();
+    roles.jlwaugh = "admin";
+    regIssues[REG] = [registryIssue(615), registryIssue(616)];
+    regTimeline[`${REG}#615`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(12, "2026-10-05T00:02:00Z")];
+    regTimeline[`${REG}#616`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(13, "2026-10-05T00:02:00Z")];
+    pulls[12] = pull(12, { state: "open", body: `Follow-up to ${REG}#615, filed as a separate task.` });
+    pulls[13] = pull(13, { state: "closed", merged: true, body: `Follow-up to ${REG}#616, filed as a separate task.` });
+    serveBoard();
+    await settle();
+    assert.equal(created.length, 4, "both issues opened: neither pull request closes the issue it names");
+    assert.equal(autoJobsHealth().skipped.find(s => s.issue === `${REG}#615`), undefined);
+    assert.equal(autoJobsHealth().skipped.find(s => s.issue === `${REG}#616`), undefined);
   });
 
   test("restarting the coordinator never opens a second job for the same issue", async () => {
