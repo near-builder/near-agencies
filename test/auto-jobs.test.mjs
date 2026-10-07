@@ -352,7 +352,7 @@ describe("opening auto jobs", () => {
     regTimeline[`${REG}#610`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z")];
     regTimeline[`${REG}#611`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(9, "2026-10-05T00:02:00Z")];
     regTimeline[`${REG}#612`] = [];
-    pulls[9] = pull(9, { state: "open" });
+    pulls[9] = pull(9, { state: "open", body: `Closes ${REG}#611` });
     serveBoard();
     await settle();
     assert.equal(created.length, 0);
@@ -368,8 +368,8 @@ describe("opening auto jobs", () => {
     regIssues[REG] = [registryIssue(613), registryIssue(614)];
     regTimeline[`${REG}#613`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(10, "2026-10-05T00:02:00Z")];
     regTimeline[`${REG}#614`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(11, "2026-10-05T00:02:00Z")];
-    pulls[10] = pull(10, { state: "closed", merged: true });
-    pulls[11] = pull(11, { state: "closed", merged: false });
+    pulls[10] = pull(10, { state: "closed", merged: true, body: `Closes ${REG}#613` });
+    pulls[11] = pull(11, { state: "closed", merged: false, body: `Closes ${REG}#614` });
     serveBoard();
     await settle();
     assert.equal(created.length, 2, "only the issue whose referencing pull request closed unmerged opens");
@@ -462,6 +462,61 @@ describe("opening auto jobs", () => {
     assert.equal(created.length, 0);
     assert.equal(calls.some(c => c.startsWith("DELETE")), false);
     assert.match(autoJobsHealth().skipped.find(s => s.issue === `${REG}#602`).why, /an open pull request/);
+  });
+
+  // #175: GitHub cross-references an issue from any mention of it — a pull
+  // request's body, a commit message, or a comment on the pull request — none
+  // of which has to close the issue. Only a body that closes it, the way
+  // closesSource (lib/payouts.mjs) already decides for auto jobs, may hold a
+  // job back.
+  test("a referencing pull request that does not close the issue — open or merged — holds nothing", async () => {
+    reset();
+    roles.jlwaugh = "admin";
+    regIssues[REG] = [registryIssue(650), registryIssue(651)];
+    regTimeline[`${REG}#650`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(702, "2026-10-05T00:05:00Z")];
+    regTimeline[`${REG}#651`] = [labeled("jlwaugh", "2026-10-05T00:01:00Z"), crossReferenced(703, "2026-10-05T00:05:00Z")];
+    pulls[702] = pull(702, { state: "open", body: `Follow-up to ${REG}#650, filed separately.` });
+    pulls[703] = pull(703, { state: "closed", merged: true, body: `Follow-up to ${REG}#651, filed separately.` });
+    serveBoard();
+    await settle();
+    assert.equal(created.length, 4, "a mention that closes neither issue holds neither back");
+    assert.equal(autoJobsHealth().skipped.find(s => s.issue === `${REG}#650`), undefined);
+    assert.equal(autoJobsHealth().skipped.find(s => s.issue === `${REG}#651`), undefined);
+  });
+
+  // The real-world case #175 reports: #156 (merged 2026-10-06T23:26:58Z,
+  // https://github.com/MultiAgency/near-agencies/pull/156) never closes #167
+  // in its body — only a maintainer's comment on #156, posted 02:13:03Z,
+  // named #167 — yet that merged pull request cross-references #167's
+  // timeline all the same.
+  describe("the real #167/#156 case #175 reports", () => {
+    const githubFixture = name => JSON.parse(readFileSync(new URL(`./fixtures/github/${name}`, import.meta.url), "utf8"));
+    const pull156 = githubFixture("pull-156.json");
+    const crossReferencedFrom156 = githubFixture("issue-167-timeline.json");
+
+    test("#156's real, merged pull request — a mention only — no longer holds #167 back", async () => {
+      reset();
+      roles.jlwaugh = "admin";
+      regIssues[REG] = [registryIssue(167, { title: "A failed `good first issue` removal is never retried once a pull request references the issue" })];
+      regTimeline[`${REG}#167`] = [labeled("jlwaugh", "2026-10-07T01:24:00Z"), ...crossReferencedFrom156];
+      pulls[156] = pull156;
+      serveBoard();
+      await settle();
+      assert.equal(created.length, 2, "#156 only mentions #167; a job opens");
+      assert.equal(fenced(created[0].body, "engagement").source, `${REG}#167`);
+    });
+
+    test("the same timeline still holds the issue back once the pull request's body actually closes it", async () => {
+      reset();
+      roles.jlwaugh = "admin";
+      regIssues[REG] = [registryIssue(167)];
+      regTimeline[`${REG}#167`] = [labeled("jlwaugh", "2026-10-07T01:24:00Z"), ...crossReferencedFrom156];
+      pulls[156] = { ...pull156, body: "Closes MultiAgency/near-agencies#167" };
+      serveBoard();
+      await settle();
+      assert.equal(created.length, 0);
+      assert.match(autoJobsHealth().skipped.find(s => s.issue === `${REG}#167`).why, /a merged pull request \(.*pull\/156\) already settles it/);
+    });
   });
 
   test("a lost answer comment is said again from the epic, and a lost team assembles again, never opening a second job", async () => {

@@ -1,0 +1,23 @@
+[
+  {
+    "event": "cross-referenced",
+    "actor": {
+      "login": "multi-agency"
+    },
+    "created_at": "2026-10-07T02:13:03Z",
+    "source": {
+      "type": "issue",
+      "issue": {
+        "number": 156,
+        "user": {
+          "login": "ayushsingh82"
+        },
+        "state": "closed",
+        "html_url": "https://github.com/MultiAgency/near-agencies/pull/156",
+        "pull_request": {
+          "merged_at": "2026-10-06T23:26:58Z"
+        }
+      }
+    }
+  }
+]
