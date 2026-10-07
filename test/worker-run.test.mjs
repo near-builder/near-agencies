@@ -399,6 +399,25 @@ export async function* query({ options, prompt }) {
 `;
 
 // The SDK itself throws mid-run — the crash the worker used to die of.
+// The turn limit as the SDK delivers it in production (agency-builder,
+// 2026-10-07 08:08Z): a result with subtype error_max_turns, then a throw
+// ("Claude Code returned an error result: Reached maximum number of turns").
+const SCENARIO_RESULT_THEN_THROWS = `
+import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+const run = promisify(execFile);
+export async function* query({ options, prompt }) {
+  await writeFile(join(process.env.SCENARIO_OUT, "prompt.txt"), prompt);
+  await run("git", ["clone", "--branch", "staging", process.env.FAKE_UPSTREAM, "."], { cwd: options.cwd, env: process.env });
+  await run("git", ["checkout", "-b", "task-58"], { cwd: options.cwd, env: process.env });
+  await writeFile(join(options.cwd, "WORK.md"), "most of the change\\n");
+  yield { type: "result", subtype: "error_max_turns", num_turns: 61, total_cost_usd: 1.34, result: "" };
+  throw new Error("Claude Code returned an error result: Reached maximum number of turns (60)");
+}
+`;
+
 const SCENARIO_THROWS = `
 import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
@@ -618,6 +637,21 @@ describe("a spawned cron run of worker.mjs, end to end (#169)", () => {
       assert.match(tip, /failed \(success\) after 4 turns at \$0\.31/, "so does the note the next run reads");
       assert.match(tip, /"subtype":"success","isError":true/);
       assert.deepEqual(h.board.state.posts, []);
+    } finally {
+      await h.cleanup();
+    }
+  });
+
+  test("a run that hits the turn limit and then throws keeps its result in the save note", async () => {
+    const h = await harness();
+    try {
+      const { stdout } = await h.spawn(SCENARIO_RESULT_THEN_THROWS);
+      assert.match(stdout, /worker: error_max_turns on #58 after 61 turns, \$1\.34/);
+      assert.match(stdout, /worker: the model run threw: .*Reached maximum number of turns/);
+      const tip = await h.tipMessage(h.upstream, "wip/task-58");
+      assert.match(tip, /^wip: task #58 run 1 saved unfinished \(the first round\): error_max_turns after 61 turns at \$1\.34/,
+        "the note keeps how the run ended, not \"ended without a result\"");
+      assert.match(tip, /"subtype":"error_max_turns"/);
     } finally {
       await h.cleanup();
     }

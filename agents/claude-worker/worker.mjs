@@ -271,7 +271,11 @@ async function run() {
       }
     }
   } catch (error) {
-    ended = { subtype: "thrown" };
+    // The SDK also throws after a result that ended the run short (the turn
+    // limit, a failed call): the result already says how the run ended, with
+    // its turns and cost, so it stands, and only a throw with no result is
+    // recorded as one.
+    ended ??= { subtype: "thrown" };
     console.log(`worker: the model run threw: ${oneLine(error)}`);
   } finally {
     // The clone goes either way; what a code run leaves behind depends on
