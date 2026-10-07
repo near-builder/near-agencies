@@ -1,0 +1,15 @@
+{
+  "base": {
+    "ref": "staging"
+  },
+  "body": "Problem: #119. Does not close it; the issue closes once the fix is shown to hold.\n\n## Plan\n\n#119's 2026-10-05 08:39Z comment found #137 and #136 racing for #61: the issue carried `good first issue` beside `ready-for-agent`, so the label invited an outside contributor to build what the board's worker was already building. It proposed two fixes: skip an issue that a pull request already references (done in #147), and remove `good first issue` when the job is made. This is the second.\n\n- `finishAutoJob` in `lib/coordinator.mjs` removes the `good first issue` label from the source issue when the job is made, and only that label. A removal GitHub refuses is logged, and the job still stands and the issue is still answered; `finishAutoJob` runs again each sweep against a fresh read of the issue's labels, so the next sweep tries again.\n- `lib/github.mjs`: `repoRemoveLabel`.\n\nNot covered: the 403 the coordinator got commenting on legion-social #18 (an access setting, since fixed for near-agencies).\n\nFiles: `lib/coordinator.mjs`, `lib/github.mjs`, `test/auto-jobs.test.mjs`.\n\n## Verification\n\n- `npm run check` passes; `npm test`: 616 pass, 0 fail.\n- New tests: the job's making removes `good first issue` and leaves `ready-for-agent` and `bug`; an issue without the label draws no removal; a refused removal leaves the job standing and answered, creates no second job, and the next sweep removes the label.\n- Not checked: a live run against GitHub.\n",
+  "html_url": "https://github.com/MultiAgency/near-agencies/pull/156",
+  "merged": true,
+  "merged_at": "2026-10-06T23:26:58Z",
+  "number": 156,
+  "state": "closed",
+  "title": "fix: an auto job takes good first issue off its source issue",
+  "user": {
+    "login": "ayushsingh82"
+  }
+}

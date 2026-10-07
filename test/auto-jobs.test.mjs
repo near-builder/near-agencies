@@ -397,6 +397,41 @@ describe("opening auto jobs", () => {
     assert.equal(autoJobsHealth().skipped.find(s => s.issue === `${REG}#616`), undefined);
   });
 
+  // The real-world case #175 reports: #156 (merged 2026-10-06T23:26:58Z,
+  // https://github.com/MultiAgency/near-agencies/pull/156) never closes #167
+  // in its body — only a maintainer's comment on #156, posted 02:13:03Z,
+  // named #167 — yet that merged pull request cross-references #167's
+  // timeline all the same.
+  describe("the real #167/#156 case #175 reports", () => {
+    const githubFixture = name => JSON.parse(readFileSync(new URL(`./fixtures/github/${name}`, import.meta.url), "utf8"));
+    const pull156 = githubFixture("pull-156.json");
+    const crossReferencedFrom156 = githubFixture("issue-167-timeline.json");
+
+    test("#156's real, merged pull request — a mention only — no longer holds #167 back", async () => {
+      reset();
+      roles.jlwaugh = "admin";
+      regIssues[REG] = [registryIssue(167, { title: "A failed `good first issue` removal is never retried once a pull request references the issue" })];
+      regTimeline[`${REG}#167`] = [labeled("jlwaugh", "2026-10-07T01:24:00Z"), ...crossReferencedFrom156];
+      pulls[156] = pull156;
+      serveBoard();
+      await settle();
+      assert.equal(created.length, 2, "#156 only mentions #167; a job opens");
+      assert.equal(fenced(created[0].body, "engagement").source, `${REG}#167`);
+    });
+
+    test("the same timeline still holds the issue back once the pull request's body actually closes it", async () => {
+      reset();
+      roles.jlwaugh = "admin";
+      regIssues[REG] = [registryIssue(167)];
+      regTimeline[`${REG}#167`] = [labeled("jlwaugh", "2026-10-07T01:24:00Z"), ...crossReferencedFrom156];
+      pulls[156] = { ...pull156, body: "Closes MultiAgency/near-agencies#167" };
+      serveBoard();
+      await settle();
+      assert.equal(created.length, 0);
+      assert.match(autoJobsHealth().skipped.find(s => s.issue === `${REG}#167`).why, /a merged pull request \(.*pull\/156\) already settles it/);
+    });
+  });
+
   test("restarting the coordinator never opens a second job for the same issue", async () => {
     reset();
     roles.jlwaugh = "admin";
